@@ -70,7 +70,7 @@ Note that the provided environment yml file is for Linux systems. For MacOS user
 
 
 ## Instructions Manual for LYCEUM
-Important notice: Please call the lyceum_call.py script from the scripts directory.
+Important notice: Please call the LYCEUM_call.py script from the scripts directory.
 
 ### Required Arguments
 
@@ -172,7 +172,7 @@ $ source lyceum_call.sh
 <img src="./example_output.png" style="width: 40%;"   class="center">
 
 ## Instructions Manual for Finetuning LYCEUM
-
+Important notice: Please call the LYCEUM_finetune.py script from the scripts directory.
 ### Required Arguments
 
 #### -bs, --batch_size

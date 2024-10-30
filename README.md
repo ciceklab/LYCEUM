@@ -56,7 +56,7 @@ Mehmet Alper Yilmaz, Ahmet Arda Ceylan, Gun Kaynar, A. Ercument Cicek
 For easy requirement handling, you can use LYCEUM_environment.yml files to initialize conda environment with requirements installed:
 
 ```shell
-$ conda env create --name LYCEUM_env -f LYCEUM_environment.yml
+$ conda env create --name lyceum_env -f LYCEUM_environment.yml
 $ conda activate LYCEUM_env
 ```
 
@@ -74,7 +74,7 @@ Important notice: Please call the LYCEUM_call.py script from the scripts directo
 ### Required Arguments
 
 #### -m, --model
-- The fine-tuned model of the paper: (1) LYCEUM. 
+- The fine-tuned model of the paper: (1) lyceum 
 
 
 #### -bs, --batch_size

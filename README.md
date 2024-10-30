@@ -278,5 +278,5 @@ $ source lyceum_finetune.sh
 
 
 - **[CC BY-NC-SA 2.0](https://creativecommons.org/licenses/by-nc-sa/2.0/)**
-- Copyright 2022 © LYCEUM.
+- Copyright 2024 © LYCEUM.
 - For commercial usage, please contact.

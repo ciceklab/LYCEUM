@@ -70,7 +70,7 @@ Note that the provided environment yml file is for Linux systems. For MacOS user
 
 
 ## Instructions Manual for LYCEUM
-Important notice: Please call the LYCEUM_call.py script from the scripts directory.
+Important notice: Please call the lyceum_call.py script from the scripts directory.
 
 ### Required Arguments
 
@@ -138,8 +138,8 @@ $ bash Anaconda3-version.num-Linux-x86_64.sh
 - Please run the following lines to create and activate the environment:
 
 ```shell
-$ conda env create --name LYCEUM_env -f LYCEUM_environment.yml
-$ conda activate LYCEUM_env
+$ conda env create --name lyceum_env -f LYCEUM_environment.yml
+$ conda activate lyceum_env
 ```
 
 ### Step-2: Run the preprocessing script.
@@ -157,7 +157,7 @@ $ source preprocess_samples.sh
 - Please run the following script:
 
 ```shell
-$ source LYCEUM_call.sh
+$ source lyceum_call.sh
 ```
  You can change the argument parameters within the script to run it on cpu and/or to obtain exon-level CNV calls.
 
@@ -235,8 +235,8 @@ $ bash Anaconda3-version.num-Linux-x86_64.sh
 - Please run the following lines to create and activate the environment:
 
 ```shell
-$ conda env create --name LYCEUM_env -f LYCEUM_environment.yml
-$ conda activate LYCEUM_env
+$ conda env create --name lyceum_env -f LYCEUM_environment.yml
+$ conda activate lyceum_env
 ```
 
 ### Step-2: Run the preprocessing script for preparing the samples for finetuning.
@@ -258,7 +258,7 @@ $ source finetune_preprocess_samples.sh
 - Please run the following script:
 
 ```shell
-$ source LYCEUM_finetune.sh
+$ source lyceum_finetune.sh
 ```
  You can change the argument parameters within the script to run it on cpu.
 

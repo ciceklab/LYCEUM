@@ -168,7 +168,7 @@ $ source LYCEUM_call.sh
 - Following figure is an example of LYCEUM gene-level output file.
 
 
-<img src="./example_output.png"   class="center">
+<img src="./example_output.png" style="width: 40%;"   class="center">
 
 ## Instructions Manual for Finetuning LYCEUM
 
@@ -244,7 +244,7 @@ $ conda activate LYCEUM_env
 - LYCEUM Finetuning requires .bam and ground truth calls. Please see the below image for a sample ground truths format.
 
 
-  <img src="./finetune_ground_truths.png"   class="center">
+  <img src="./finetune_ground_truths.png" style="width: 30%;"  class="center">
 - Please run the following line:
 
 ```shell

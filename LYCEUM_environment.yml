@@ -1,4 +1,4 @@
-name: /mnt/alperyilmaz/conda_envs/ecoleSup_env
+name: base
 channels:
   - pytorch
   - bioconda
@@ -453,4 +453,3 @@ dependencies:
       - wandb==0.16.4
       - xxhash==3.4.1
       - yarl==1.5.1
-prefix: /mnt/alperyilmaz/conda_envs/ecoleSup_env

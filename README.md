@@ -58,7 +58,7 @@ For easy requirement handling, you can use LYCEUM_environment.yml files to initi
 
 ```shell
 $ conda env create --name lyceum_env -f LYCEUM_environment.yml
-$ conda activate LYCEUM_env
+$ conda activate lyceum_env
 ```
 
 Note that the provided environment yml file is for Linux systems. For MacOS users, the corresponding versions of the packages might need to be changed.

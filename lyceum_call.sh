@@ -1,1 +1,1 @@
-python ./scripts/LYCEUM_call.py --model lyceum_model --input ./processed_samples --output ./lyceum_calls_output --cnv geneLevel --batch_size 16 --normalize lyceum_stats.txt --gpu 0
+python ./scripts/LYCEUM_call.py --model lyceum --input ./processed_samples --output ./lyceum_calls_output --cnv genelevel --batch_size 16 --stats_lookup ./stats/toySet_stats_lookup.npy --gpu 0

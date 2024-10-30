@@ -1,6 +1,6 @@
 '''
 LYCEUM source code.
-LYCEUM is a deep learning based WES CNV caller tool.
+LYCEUM is a deep learning based Ancient WGS CNV caller tool.
 This script, LYCEUM_call.py, is only used to load the weights of pre-trained models
 and use them to perform CNV calls.
 '''
@@ -55,22 +55,12 @@ cur_dirname = os.path.dirname(__file__)
 Perform I/O operations.
 '''
 
-description = "LYCEUM is a deep learning based WES CNV caller tool. \
+description = "LYCEUM is a deep learning based Ancient WGS CNV caller tool. \
             For academic research the software is completely free, although for \
-            commercial usage the software is licensed. \n \
-            please see ciceklab.cs.bilkent.edu.tr/LYCEUMlicenceblablabla."
+            commercial usage the software is licensed."
 
 parser = argparse.ArgumentParser(description=description)
 
-'''
-Required arguments group:
-(i) -m, pretrained models of the paper, one of the following: (1) lyceum, 
-(ii) -i, input data path comprised of WES samples with read depth data.
-(iii) -o, relative or direct output directory path to write LYCEUM output file.
-(v) -c, Depending on the level of resolution you desire, choose one of the options: (1) exonlevel, (2) genelevel
-(vi) -t, Path of exon target file.
-(vii) -n, The path for mean&std stats of read depth values.
-'''
 
 required_args = parser.add_argument_group('Required Arguments')
 opt_args = parser.add_argument_group("Optional Arguments")
@@ -86,19 +76,14 @@ required_args.add_argument("-o", "--output", help="Relative or direct output dir
 required_args.add_argument("-c", "--cnv", help="Depending on the level of resolution you desire, choose one of the options: \n \
                                                 (i) exonlevel, (ii) genelevel", required=True)
 
-required_args.add_argument("-n", "--normalize", help="Please provide the path for mean&std stats of read depth values (in .npy format) to normalize. \n \
-#                                                    These values are obtained precalculated from ancient samples.", required=True)
+required_args.add_argument("-s", "--stats_lookup", help="Please provide the path for mean&std lookup file (in .npy format) to normalize. \n \
+                                                    These values can be calculated using mean_std_calculator.py file", required=True)
 
+opt_args.add_argument("-conf", "--confidenceThreshold", default=0.5, help="Confidence threshold for calling CNV labels. \n \
+                                                                Select higher values for more confident calls.", required=False)
 
 opt_args.add_argument("-g", "--gpu", help="Specify gpu", required=False)
 
-'''
-Optional arguments group:
--v or --version, version check
--h or --help, help
--g or --gpu, specify gpu
--
-'''
 
 parser.add_argument("-V", "--version", help="show program version", action="store_true")
 args = parser.parse_args()
@@ -240,6 +225,14 @@ class CNVcaller(nn.Module):
         z = self.mlp_head2(y)
         return z
 
+def chr_2_id(chromosome):
+    if chromosome == "chrX":
+        return 23  
+    if chromosome == "chrY":
+        return 24 
+    else:
+        return int(chromosome[3:])  # Sort by numeric part
+    
 
 def call_cnv_regions(all_samples_names):
     for sample_name in tqdm(all_samples_names):
@@ -304,8 +297,15 @@ def call_cnv_regions(all_samples_names):
         readdepths_data = np.asarray([np.asarray(k) for k in readdepths_data])
         readdepths_data = sequence.pad_sequences(readdepths_data, maxlen=1005,dtype=np.float32,value=-1)
         readdepths_data = readdepths_data[ :, None, :]
-
-        stat_values = ANCIENT_STAT_VALUES[f"{sample_name}"]
+        
+        try:
+            stat_values = ANCIENT_STAT_VALUES[f"{sample_name}"]
+        except KeyError:
+            raise Exception(f"Could not find sample in stats lookup file. \n \
+                                Your sample : {str(sample_name)} \n \
+                                Samples in stats lookup file : {str(ANCIENT_STAT_VALUES.keys())} \n \
+                                ")            
+            
         means_ = float(stat_values["mean"])
         stds_ = float(stat_values["std"])
 
@@ -315,6 +315,7 @@ def call_cnv_regions(all_samples_names):
 
         allpreds = []
         allExonMeans_data= []
+        allConfidences = []
 
         for exons in tqdm(x_test):
         
@@ -336,16 +337,22 @@ def call_cnv_regions(all_samples_names):
             output1 = model(exons,real_mask)
             
             _, predicted = torch.max(output1.data, 1)
+            confidences = torch.amax(nn.functional.softmax(output1),1)
 
             
             preds = list(predicted.cpu().numpy().astype(np.int64))
             exon_means_list = list(exon_means.cpu().numpy().astype(np.float))
             allpreds.extend(preds)
-            allExonMeans_data.extend(exon_means_list)            
+            allExonMeans_data.extend(exon_means_list)
+            
+            confidence_list = confidences.cpu().detach().numpy().astype(np.float).tolist()
+            allConfidences.extend(confidence_list)               
 
         chrs_data = chrs_data.astype(int)
         allpreds = np.array(allpreds)
         allExonMeans_data = np.array(allExonMeans_data)
+        allConfidences = np.array(allConfidences)
+        f = open(os.path.join(os.path.join(args.output,"tmp"), sample_name + ".csv"), "w")
         for j in tqdm(range(1,25)):
             indices = chrs_data == j
 
@@ -353,6 +360,7 @@ def call_cnv_regions(all_samples_names):
             start_inds = start_inds_data[indices]
             end_inds = end_inds_data[indices]
             allExonMeans = allExonMeans_data[indices]
+            confidences = allConfidences[indices]
 
             sorted_ind = np.argsort(start_inds)
             
@@ -360,7 +368,7 @@ def call_cnv_regions(all_samples_names):
             end_inds = end_inds[sorted_ind]
             start_inds = start_inds[sorted_ind]
             allExonMeans  = allExonMeans[sorted_ind]
-            
+            confidences = confidences[sorted_ind]
             
             chr_ = "chr"
             if j < 23:
@@ -370,10 +378,9 @@ def call_cnv_regions(all_samples_names):
             elif j == 24:
                 chr_ += "X"
         
-            for k_ in range(len(end_inds)):       
-                f = open(os.path.join(os.path.join(args.output,"tmp"), sample_name + ".csv"), "a")
-                f.write(chr_ + "," + str(start_inds[k_]) + "," + str(end_inds[k_]) + ","+ str(int(predictions[k_]))+","+str(allExonMeans[k_]) + "\n")
-                f.close()
+            for k_ in range(len(end_inds)):
+                f.write(chr_ + "," + str(start_inds[k_]) + "," + str(end_inds[k_]) + ","+ str(int(predictions[k_]))+","+str(allExonMeans[k_])+","+str(confidences[k_]) + "\n")
+        f.close()
 
 
 
@@ -383,18 +390,22 @@ def call_cnv_regions_without_readDepth(all_samples_names):
     for sample_name in tqdm(all_samples_names):
         message(f"Processing sample: {sample_name}")
         lyceum_calls = pd.read_csv(os.path.join(os.path.join(args.output,"tmp"), sample_name + ".csv",),sep=",",header=None)
-        target_data = pd.read_csv("../exon_region_hg38_hg19_lookup_withGene.csv", sep="\t")
+        target_data = pd.read_csv(os.path.join(cur_dirname, "../hg38_exon_region_withGene_lookup.csv"), sep="\t")
 
         lyceum_calls = target_data.merge(lyceum_calls, how='left', right_on=[0,1,2],left_on=["chrom_hg38","start_hg38","end_hg38"])
-        lyceum_calls = lyceum_calls.drop([0, 1, 2,"chrom_hg19","start_hg19","end_hg19","hg38_ind"], axis=1)
-        lyceum_calls = lyceum_calls.rename(columns={3:"prediction",4:"rd_mean"})
+        lyceum_calls = lyceum_calls.rename(columns={3:"prediction",4:"rd_mean",5:"confidence"})
         lyceum_calls = lyceum_calls.drop_duplicates()
+        
+        ## FILTERING WITH RESPECT TO CONFIDENCE VALUE
+        confidence_mask = lyceum_calls["confidence"] < float(args.confidenceThreshold)
+        if(confidence_mask.any()):
+            lyceum_calls.loc[confidence_mask,"prediction"] = 0
         
         lyceum_calls.loc[lyceum_calls["prediction"] == 0,"prediction"] = "<NO-CALL>"
         lyceum_calls.loc[lyceum_calls["prediction"] == 1,"prediction"] = "<DUP>"
         lyceum_calls.loc[lyceum_calls["prediction"] == 2,"prediction"] = "<DEL>"
         
-        lyceum_calls.loc[lyceum_calls.isna()["prediction"],"prediction"] = "<NO-CALL>" # TODO ?
+        lyceum_calls.loc[lyceum_calls.isna()["prediction"],"prediction"] = "<NO-CALL>" 
         
 
         poor_read_mask = (lyceum_calls["rd_mean"] < COVERAGE_THRESHOLD) | ((lyceum_calls["end_hg38"])-(lyceum_calls["start_hg38"])>1000)
@@ -415,8 +426,8 @@ def call_cnv_regions_without_readDepth(all_samples_names):
                     lyceum_calls.loc[i,"prediction"] = Counter(matching_exons_downStream["prediction"].to_list()+matching_exons_upStream["prediction"].to_list()).most_common()[0][0]        
 
         if(args.cnv == "exonlevel"):
-            f = open(os.path.join(args.output, sample_name + ".csv"), "a")
-            f.write("Sample Name" + "\t" +"Chromosome" + "\t" + "CNV Start Index" + "\t" + "CNV End Index" + "\t" + "lyceum Prediction" + "\n")    
+            f = open(os.path.join(args.output, sample_name + "_exonlevel.csv"), "w")
+            f.write("Sample Name" + "\t" +"Chromosome" + "\t" + "CNV Start Index" + "\t" + "CNV End Index" + "\t" + "LYCEUM Prediction" + "\n")    
 
             for i,row in lyceum_calls.iterrows():
                 f.write(sample_name + "\t" + row["chrom_hg38"] + "\t" + str(row["start_hg38"]) + "\t" + str(row["end_hg38"]) + "\t"+ (row["prediction"])+ "\n")
@@ -434,6 +445,7 @@ def call_cnv_regions_without_readDepth(all_samples_names):
             lyceum_gene_calls_grouped = lyceum_gene_calls_grouped.reset_index()
             
             #GENE-LEVEL MAJORITY VOTING OF GENES
+            f = open(os.path.join(args.output, sample_name + "_genelevel.csv"), "w")
             for (ind), row in lyceum_gene_calls_grouped.iterrows():
                 pred = row["exon_predictions"].copy()
                 del pred["<NO-CALL>"]
@@ -447,8 +459,11 @@ def call_cnv_regions_without_readDepth(all_samples_names):
                     else:
                         lyceum_gene_calls_grouped.loc[ind,"gene_prediction"] = "<NO-CALL>"  
                         
-            f = open(os.path.join(args.output, sample_name + ".csv"), "a")
-            f.write("Sample Name" + "\t" +"Chromosome" + "\t" + "Gene Name" + "\t" + "lyceum Prediction" + "\n")    
+            f.write("Sample Name" + "\t" +"Chromosome" + "\t" + "Gene Name" + "\t" + "LYCEUM Prediction" + "\n")
+                        
+            ### sort by chrom
+            chrom_ids = lyceum_gene_calls_grouped["chrom_hg38"].apply(chr_2_id)
+            lyceum_gene_calls_grouped = lyceum_gene_calls_grouped.loc[chrom_ids.argsort()].reset_index(drop=True)
 
             for i,row in lyceum_gene_calls_grouped.iterrows():
                 f.write(sample_name + "\t" + row["chrom_hg38"] + "\t" + str(row["gene_name"])+ "\t"+ (row["gene_prediction"])+ "\n")
@@ -458,7 +473,7 @@ def call_cnv_regions_without_readDepth(all_samples_names):
             
         else:
             os.remove(os.path.join(os.path.join(args.output,"tmp"), sample_name + ".csv"))
-            raise Exception("Invalid CNV parameter. It should be either exonLevel or geneLevel")
+            raise Exception("Invalid CNV parameter. It should be either exonlevel or genelevel")
         
     
     return
@@ -474,12 +489,12 @@ else:
 model.eval()
 model = model.to(device)
 
-
-ANCIENT_STAT_VALUES = np.load(args.normalize,allow_pickle=True).item()
-
-
 input_files = os.listdir(args.input)
 all_samples_names = [file.split("_labeled_data.npy")[0] for file in input_files] #NOTE
+ 
+ANCIENT_STAT_VALUES = np.load(args.stats_lookup,allow_pickle=True).item()
+    
+
 
 message("Calling for CNV regions...")
 call_cnv_regions(all_samples_names)

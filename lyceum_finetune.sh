@@ -1,0 +1,1 @@
+python ./scripts/LYCEUM_finetune.py --batch_size 16 --input ./processed_exonWise_finetuning_dataset --output ./LYCEUM_finetuned_model_weights --load_model_path ./models/lyceum_model.pt  --stats_lookup ./stats/toySet_ft_stats_lookup.npy --epochs 2 --learning_rate 5e-5 --gpu 0

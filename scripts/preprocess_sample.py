@@ -14,7 +14,7 @@ from multiprocessing.pool import Pool
 import argparse
 
 
-description = "LYCEUM is a deep learning based WES CNV caller tool. \
+description = "LYCEUM is a deep learning based Ancient WGS CNV caller tool. \
             For academic research the software is completely free, although for \
             commercial usage the software is licensed. \n \
             please see ciceklab.cs.bilkent.edu.tr/LYCEUMlicenceblablabla."
@@ -36,13 +36,14 @@ exon_wise_readdepths_path = args.readdepth
 output_path = args.output
 target_list_path = args.target
 
+os.makedirs(args.output, exist_ok=True)
 
 exon_wise_readdepth_files = listdir(exon_wise_readdepths_path)
 for file_name in tqdm(exon_wise_readdepth_files):
 
     labeled_data = []
-    sample_name = file_name.split(".txt")[0].split(".")[0].split("_")[0] # NOTE you may change it
-    output_name = file_name.split(".txt")[0]
+    sample_name = file_name.split(".bam.txt")[0].split(".")[0].split("_")[0] 
+    output_name = file_name.split(".bam.txt")[0]
     target_data = pd.read_csv(target_list_path, sep="\t", header=None).values
     read_depth_data = pd.read_csv(os.path.join(exon_wise_readdepths_path, file_name), sep="\t")
     read_depth_data["REF"] = read_depth_data["REF"].astype(str)

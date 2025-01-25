@@ -79,7 +79,7 @@ required_args.add_argument("-c", "--cnv", help="Depending on the level of resolu
 required_args.add_argument("-s", "--stats_lookup", help="Please provide the path for mean&std lookup file (in .npy format) to normalize. \n \
                                                     These values can be calculated using mean_std_calculator.py file", required=True)
 
-opt_args.add_argument("-conf", "--confidenceThreshold", default=0.5, help="Confidence threshold for calling CNV labels. \n \
+opt_args.add_argument("-conf", "--confidenceThreshold", default=-1, help="Confidence threshold for calling CNV labels. \n \
                                                                 Select higher values for more confident calls.", required=False)
 
 opt_args.add_argument("-g", "--gpu", help="Specify gpu", required=False)
@@ -156,16 +156,26 @@ class CNVcaller(nn.Module):
         self.patch_size = patch_size
         self.exon_size = exon_size
         self.pos_emb = PositionalEmbedding(embed_dim)
-        self.patch_to_embedding = nn.Linear(patch_dim, embed_dim)
+        
+        self.patch_to_cnn_embedding_v2 = nn.Sequential(
+            nn.Conv1d(1, 32, 3, stride=1,padding=1),
+            nn.BatchNorm1d(32),
+            nn.ReLU(),
+            
+            nn.Conv1d(32, 64, 3, stride=1,padding=1),
+            nn.BatchNorm1d(64),
+            nn.ReLU(),          
+        )
+                
 
         self.chromosome_token = nn.Parameter(torch.randn(1, 24, embed_dim))
         self.to_cls_token = nn.Identity()
         self.attention = Performer(
-    dim = embed_dim,
-    depth = depth,
-    heads = 8
-)
-              
+            dim = embed_dim,
+            depth = depth,
+            heads = 8
+        )
+        
         self.mlp_head = nn.Sequential(
             nn.LayerNorm(embed_dim),
             nn.Linear(embed_dim, embed_dim),
@@ -177,6 +187,7 @@ class CNVcaller(nn.Module):
 
     def forward(self, exon, mask):
         chrs = exon[:,:,-1]
+        
         strt = exon[:,:,-2]
         ends = exon[:,:,-3]
         p = self.patch_size
@@ -184,25 +195,21 @@ class CNVcaller(nn.Module):
         
         all_ind = list(range(self.exon_size))
         
-
-        indices = torch.tensor(all_ind).to(exon.device)
-        exon = torch.index_select(exon, 2, indices).to(exon.device)
+        indices = torch.tensor(all_ind).to(device)
+        exon = torch.index_select(exon, 2, indices).to(device)
         
         all_ind = list(range(self.exon_size + 1))
-        
-        
-        
-        indices = torch.tensor(all_ind).to(exon.device)
-        mask = torch.index_select(mask, 1, indices).to(exon.device)
 
-        x = rearrange(exon, 'b c (h p1) -> b h (p1 c)', p1 = p)
-        x = self.patch_to_embedding(x)
+        indices = torch.tensor(all_ind).to(device)
+        mask = torch.index_select(mask, 1, indices).to(device)
+
+        x = self.patch_to_cnn_embedding_v2(exon)
+        x = rearrange(x, 'b c (h p1) -> b h (p1 c)', p1 = p)
+
         batch_size, n, _ = x.shape
-
         
         crs = self.chromosome_token[:, int(chrs[0,0].item()-1): int(chrs[0,0].item()), :]
-    
-        
+       
         for i in range(1,batch_size):
             crs_ = self.chromosome_token[:, int(chrs[i,0].item()-1): int(chrs[i,0].item()), :]
             
@@ -210,15 +217,9 @@ class CNVcaller(nn.Module):
         
         x = torch.cat((crs, x), dim=1)
         
-        
-        x += self.pos_emb(x,chrs,strt,ends)
-        
+        x += self.pos_emb(x,chrs,strt,ends)  
         x = self.attention(x,input_mask = mask)
-
-    
         x = self.to_cls_token(x[:, 0])
-
-        
     
         y = self.mlp_head(x)
 
@@ -337,7 +338,7 @@ def call_cnv_regions(all_samples_names):
             output1 = model(exons,real_mask)
             
             _, predicted = torch.max(output1.data, 1)
-            confidences = torch.amax(nn.functional.softmax(output1),1)
+            confidences = nn.functional.softmax(output1)[:,[1,2]]
 
             
             preds = list(predicted.cpu().numpy().astype(np.int64))
@@ -379,7 +380,7 @@ def call_cnv_regions(all_samples_names):
                 chr_ += "X"
         
             for k_ in range(len(end_inds)):
-                f.write(chr_ + "," + str(start_inds[k_]) + "," + str(end_inds[k_]) + ","+ str(int(predictions[k_]))+","+str(allExonMeans[k_])+","+str(confidences[k_]) + "\n")
+                f.write(chr_ + "," + str(start_inds[k_]) + "," + str(end_inds[k_]) + ","+ str(int(predictions[k_]))+","+str(allExonMeans[k_])+","+str(confidences[k_][0])+","+str(confidences[k_][1]) + "\n")
         f.close()
 
 
@@ -393,13 +394,22 @@ def call_cnv_regions_without_readDepth(all_samples_names):
         target_data = pd.read_csv(os.path.join(cur_dirname, "../hg38_exon_region_withGene_lookup.csv"), sep="\t")
 
         lyceum_calls = target_data.merge(lyceum_calls, how='left', right_on=[0,1,2],left_on=["chrom_hg38","start_hg38","end_hg38"])
-        lyceum_calls = lyceum_calls.rename(columns={3:"prediction",4:"rd_mean",5:"confidence"})
+        lyceum_calls = lyceum_calls.rename(columns={3:"prediction",4:"rd_mean",5:"dup_confidence",6:"del_confidence"})
         lyceum_calls = lyceum_calls.drop_duplicates()
-        
+        dup_confidences = lyceum_calls["dup_confidence"].astype(float)      
+        del_confideces = lyceum_calls["del_confidence"].astype(float)        
+                    
         ## FILTERING WITH RESPECT TO CONFIDENCE VALUE
-        confidence_mask = lyceum_calls["confidence"] < float(args.confidenceThreshold)
-        if(confidence_mask.any()):
-            lyceum_calls.loc[confidence_mask,"prediction"] = 0
+        if(float(args.confidenceThreshold)>=0):
+            confidence_mask = (dup_confidences > float(args.confidenceThreshold)) | (del_confideces > float(args.confidenceThreshold)) 
+            if(confidence_mask.any()):
+                dup_regions = (confidence_mask & (dup_confidences>=del_confideces))
+                del_regions = (confidence_mask & (dup_confidences<del_confideces))
+                
+                lyceum_calls.loc[dup_regions,"prediction"] = 1
+                lyceum_calls.loc[del_regions,"prediction"] = 2
+                lyceum_calls.loc[(~dup_regions) & (~del_regions),"prediction"] = 0
+                
         
         lyceum_calls.loc[lyceum_calls["prediction"] == 0,"prediction"] = "<NO-CALL>"
         lyceum_calls.loc[lyceum_calls["prediction"] == 1,"prediction"] = "<DUP>"
@@ -479,7 +489,7 @@ def call_cnv_regions_without_readDepth(all_samples_names):
     return
     
 
-model = CNVcaller(1000, 1, 3, 192, 3)
+model = CNVcaller(1000, 1, 3, 64, 3)
 
 if args.model == "lyceum":
     model.load_state_dict(torch.load(os.path.join(cur_dirname, "../models/lyceum_model.pt"), map_location=device))
@@ -502,4 +512,4 @@ call_cnv_regions(all_samples_names)
 message("Calling for regions without read depth information..")
 call_cnv_regions_without_readDepth(all_samples_names)
     
-os.rmdir(os.path.join(args.output,"tmp"))     
+os.rmdir(os.path.join(args.output,"tmp")) 

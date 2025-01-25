@@ -117,7 +117,7 @@ LR = float(args.learning_rate)
 EXON_SIZE = 1000
 PATCH_SIZE = 1
 NO_LAYERS = 3 
-FEATURE_SIZE = 192
+FEATURE_SIZE = 64
 NUM_CLASS = 3
 
 class AddRandom:
@@ -221,15 +221,25 @@ class CNVcaller(nn.Module):
         self.patch_size = patch_size
         self.exon_size = exon_size
         self.pos_emb = PositionalEmbedding(embed_dim)
-        self.patch_to_embedding = nn.Linear(patch_dim, embed_dim)
+        
+        self.patch_to_cnn_embedding_v2 = nn.Sequential(
+            nn.Conv1d(1, 32, 3, stride=1,padding=1),
+            nn.BatchNorm1d(32),
+            nn.ReLU(),
+            
+            nn.Conv1d(32, 64, 3, stride=1,padding=1),
+            nn.BatchNorm1d(64),
+            nn.ReLU(),          
+        )
+                
 
         self.chromosome_token = nn.Parameter(torch.randn(1, 24, embed_dim))
         self.to_cls_token = nn.Identity()
         self.attention = Performer(
-    dim = embed_dim,
-    depth = depth,
-    heads = 8
-)
+            dim = embed_dim,
+            depth = depth,
+            heads = 8
+        )
         
         self.mlp_head = nn.Sequential(
             nn.LayerNorm(embed_dim),
@@ -237,6 +247,8 @@ class CNVcaller(nn.Module):
             nn.GELU()
         )
         self.mlp_head2 = nn.Linear(embed_dim, num_class)
+
+    
 
     def forward(self, exon, mask):
         chrs = exon[:,:,-1]
@@ -248,18 +260,18 @@ class CNVcaller(nn.Module):
         
         all_ind = list(range(self.exon_size))
         
-        indices = torch.tensor(all_ind).cuda()
-        exon = torch.index_select(exon, 2, indices).cuda()
+        indices = torch.tensor(all_ind).to(device)
+        exon = torch.index_select(exon, 2, indices).to(device)
         
         all_ind = list(range(self.exon_size + 1))
 
-        indices = torch.tensor(all_ind).cuda()
-        mask = torch.index_select(mask, 1, indices).cuda()
+        indices = torch.tensor(all_ind).to(device)
+        mask = torch.index_select(mask, 1, indices).to(device)
 
-        x = rearrange(exon, 'b c (h p1) -> b h (p1 c)', p1 = p)
-        x = self.patch_to_embedding(x)
+        x = self.patch_to_cnn_embedding_v2(exon)
+        x = rearrange(x, 'b c (h p1) -> b h (p1 c)', p1 = p)
+
         batch_size, n, _ = x.shape
-
         
         crs = self.chromosome_token[:, int(chrs[0,0].item()-1): int(chrs[0,0].item()), :]
        
@@ -269,6 +281,7 @@ class CNVcaller(nn.Module):
             crs = torch.cat((crs, crs_), 0)
         
         x = torch.cat((crs, x), dim=1)
+        
         x += self.pos_emb(x,chrs,strt,ends)  
         x = self.attention(x,input_mask = mask)
         x = self.to_cls_token(x[:, 0])
@@ -358,7 +371,7 @@ def train_func(epoch,model):
         if i % 100 == 0 and i > 0:
             nocall_prec, dup_prec, del_prec, nocall_recall, dup_recall, del_recall = calculate_metrics(tp_nocall, tp_plus_fp_nocall, tp_duplication, tp_plus_fp_duplication, tp_deletion, tp_plus_fp_deletion, tp_plus_fn_nocall, tp_plus_fn_duplication, tp_plus_fn_deletion)    
             message(f"Model weights are saved for Epoch: {round(epoch+(((i+1)*bs)/len(my_dataset)),2)}")
-            torch.save(model.state_dict(), os.path.join(args.output, f"lyceum_ft192_depth3_exonsize1000_patchsize1_lr{str(LR)}.pt"))
+            torch.save(model.state_dict(), os.path.join(args.output, f"lyceum_ft64_depth3_exonsize1000_patchsize1_lr{str(LR)}.pt"))
             message(f'Batch no: {i}\tLoss: {train_loss / (i+1):.4f}(train)\t|\tNocall_prec: {nocall_prec * 100:.1f}%(train)|\tDup_prec: {dup_prec * 100:.1f}%(train)|\tDel_prec: {del_prec * 100:.1f}%(train)|\tNocall_recall: {nocall_recall * 100:.1f}%(train)|\tDup_recall: {dup_recall * 100:.1f}%(train)|\tDel_recall: {del_recall * 100:.1f}%(train)')
     
     nocall_prec, dup_prec, del_prec, nocall_recall, dup_recall, del_recall = calculate_metrics(tp_nocall, tp_plus_fp_nocall, tp_duplication, tp_plus_fp_duplication, tp_deletion, tp_plus_fp_deletion, tp_plus_fn_nocall, tp_plus_fn_duplication, tp_plus_fn_deletion)
@@ -371,8 +384,7 @@ ANCIENT_STAT_VALUES = np.load(args.stats_lookup,allow_pickle=True).item()
 
 ## Set model
 model = CNVcaller( EXON_SIZE, PATCH_SIZE, NO_LAYERS, FEATURE_SIZE, NUM_CLASS)
-
-model.load_state_dict(torch.load(args.load_model_path))
+model.load_state_dict(torch.load(args.load_model_path, map_location=device))
 model.to(device)
 print("number of parameters:", sum(p.numel() for p in model.parameters() if p.requires_grad))
 
@@ -387,8 +399,6 @@ message("Starting training...")
 
 #### Fine-tuning
 
-model.load_state_dict(torch.load(args.load_model_path))
-model.to(device)
 message(f"Fine-tuning started\n")
 os.makedirs(args.output ,exist_ok=True)
 for epoch in range(N_EPOCHS): 
@@ -398,7 +408,7 @@ for epoch in range(N_EPOCHS):
     mins = secs / 60
     secs = secs % 60
     message(f"Model weights are saved for Epoch: {epoch+1}")
-    torch.save(model.state_dict(), os.path.join(args.output, f"lyceum_ancient_ft192_depth3_exonsize1000_patchsize1_e_{str(epoch)}.pt"))
+    torch.save(model.state_dict(), os.path.join(args.output, f"lyceum_ancient_ft64_depth3_exonsize1000_patchsize1_e_{str(epoch)}.pt"))
     
     scheduler.step()
     message("Epoch: %d | time in %d minutes, %d seconds" %( epoch, mins, secs))

@@ -100,7 +100,7 @@ Important notice: Please call the LYCEUM_call.py script from the scripts directo
 ### Optional Arguments
 
 #### -conf, --confidenceThreshold
-- Confidence threshold for calling CNV labels. (Default = 0.5)
+- Confidence threshold for calling CNV labels.
 - Select higher values for more confident calls. 
 
 

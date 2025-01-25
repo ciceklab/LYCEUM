@@ -9,12 +9,14 @@
 
 > LYCEUM is a deep learning-based tool designed for predicting copy number variations (CNVs) in ancient whole-genome sequencing (WGS) data using read depth sequences.
 
+
 > The manuscript can be found here:  <a href="https://www.biorxiv.org/content/10.1101/2024.10.28.620589v2" target="_blank">**LYCEUM : Learning to Call Copy Number Variants on Low Coverage Ancient Genomes**</a>
 
 > The repository with processed samples, groundtruth data, and CNV predictions for real and simulated datasets to reproduce the analyses in the paper can be found here: <a href="https://doi.org/10.5281/zenodo.13997011" target="_blank">**LYCEUM results reproduction**</a>
 
 > <a href="https://en.wikipedia.org/wiki/Deep_learning" target="_blank">**Deep Learning**</a>, <a href="https://en.wikipedia.org/wiki/Ancient_DNA" target="_blank">**Ancient DNA**</a>, <a href="https://en.wikipedia.org/wiki/Copy-number_variation" target="_blank">**Copy Number Variation**</a>, <a href="https://en.wikipedia.org/wiki/Whole_genome_sequencing" target="_blank">**Whole Genome Sequencing**</a>
 
+<img src="./system_figure.png" style="width: 100%;"   class="center">
 
 ---
 
